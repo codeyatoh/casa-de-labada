@@ -1,0 +1,52 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    match /transactions/{transactionId} {
+      // Only authenticated users can read
+      allow read: if request.auth != null;
+
+      // Hard deletes are NEVER allowed — use VOID status for cancellations
+      allow delete: if false;
+      
+      // Strict data validation on create/update
+      allow create, update: if 
+        request.auth != null &&
+
+        // Must contain all required fields
+        request.resource.data.keys().hasAll([
+          'orNumber', 'customerName', 'weight', 'category', 'cycles', 
+          'accountAmount', 'advancePayment', 'collection', 'currentBalance', 
+          'status', 'createdAt', 'dateString'
+        ]) &&
+        
+        // Type validation
+        request.resource.data.orNumber is string &&
+        request.resource.data.customerName is string &&
+        request.resource.data.category is string &&
+        request.resource.data.status is string &&
+        request.resource.data.createdAt is string &&
+        request.resource.data.dateString is string &&
+        request.resource.data.weight is number &&
+        request.resource.data.cycles is number &&
+        request.resource.data.accountAmount is number &&
+        request.resource.data.advancePayment is number &&
+        request.resource.data.collection is number &&
+        request.resource.data.currentBalance is number &&
+        
+        // Business logic constraints
+        request.resource.data.customerName.size() > 0 &&
+        request.resource.data.customerName.size() <= 50 &&
+        request.resource.data.weight > 0 &&
+        request.resource.data.weight <= 100 &&
+        request.resource.data.cycles >= 1 &&
+        request.resource.data.accountAmount >= 0 &&
+        request.resource.data.advancePayment >= 0 &&
+        request.resource.data.collection >= 0 &&
+        
+        // Enum validation for status
+        request.resource.data.status in ['UNPAID', 'BALANCE', 'PAID', 'READY', 'CLAIMED', 'VOID'];
+    }
+  }
+}
