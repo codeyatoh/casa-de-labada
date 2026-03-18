@@ -1,14 +1,21 @@
 import React, { useState } from 'react'
 import ReactDOM from 'react-dom'
-import { XIcon, AlertOctagonIcon, PackageCheckIcon } from 'lucide-react'
+import { XIcon, AlertOctagonIcon, Trash2Icon } from 'lucide-react'
 
-export function ClaimConfirmationModal({
+export function VoidConfirmationModal({
   isOpen,
   onClose,
   onConfirm,
   entry,
 }) {
   const [confirmText, setConfirmText] = useState('')
+
+  // Reset input when closed
+  React.useEffect(() => {
+    if (!isOpen) {
+      setConfirmText('')
+    }
+  }, [isOpen])
 
   if (!isOpen || !entry) return null
 
@@ -37,8 +44,8 @@ export function ClaimConfirmationModal({
       >
         <div className="flex items-center justify-between mb-6">
           <h2 className="font-mono text-lg font-semibold text-white flex items-center gap-2">
-            <PackageCheckIcon className="w-5 h-5 text-blue-400" />
-            Confirm Claim
+            <Trash2Icon className="w-5 h-5 text-red-500" />
+            Confirm Void
           </h2>
           <button
             onClick={onClose}
@@ -49,14 +56,14 @@ export function ClaimConfirmationModal({
         </div>
 
         <div className="mb-6 space-y-4">
-          <div className="bg-blue-950/20 rounded-lg p-4 border border-blue-900/30">
+          <div className="bg-red-950/20 rounded-lg p-4 border border-red-900/30">
             <p className="font-mono text-sm text-zinc-300 mb-2 leading-relaxed">
-              You are about to mark order <strong className="text-white">#{entry.orNumber}</strong> for <strong className="text-white">{entry.customerName}</strong> as claimed.
+              You are about to void order <strong className="text-white">#{entry.orNumber}</strong> for <strong className="text-white">{entry.customerName}</strong>.
             </p>
-            <div className="flex items-start gap-2 mt-4 text-amber-500/90">
+            <div className="flex items-start gap-2 mt-4 text-red-500">
               <AlertOctagonIcon className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <p className="font-mono text-[10px] leading-relaxed">
-                This item will be removed from the active dashboard and moved to the permanent history records.
+                This will permanently mark the transaction as voided and hide it from the active dashboard. This action cannot be undone.
               </p>
             </div>
           </div>
@@ -64,17 +71,17 @@ export function ClaimConfirmationModal({
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <label
-                htmlFor="confirm-text"
+                htmlFor="confirm-void-text"
                 className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-400 font-medium block"
               >
                 Type <span className="text-white font-bold select-all">CONFIRM</span> to proceed
               </label>
               <input
-                id="confirm-text"
+                id="confirm-void-text"
                 type="text"
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
-                className="w-full bg-zinc-800 border-2 border-zinc-700/50 rounded-lg py-2.5 px-4 font-mono text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/10 transition-all text-center tracking-widest"
+                className="w-full bg-zinc-800 border-2 border-zinc-700/50 rounded-lg py-2.5 px-4 font-mono text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-red-500/50 focus:ring-4 focus:ring-red-500/10 transition-all text-center tracking-widest"
                 placeholder="CONFIRM"
                 autoComplete="off"
                 autoFocus
@@ -94,12 +101,12 @@ export function ClaimConfirmationModal({
                 disabled={!isComplete}
                 className={`w-full sm:flex-[1.2] font-mono font-bold text-sm py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-sm ${
                   isComplete
-                    ? 'bg-blue-500 hover:bg-blue-400 text-white cursor-pointer translate-y-0 shadow-blue-500/25 border border-blue-400'
+                    ? 'bg-red-600 hover:bg-red-500 text-white cursor-pointer translate-y-0 shadow-red-500/25 border border-red-500'
                     : 'bg-zinc-800/50 text-zinc-500 cursor-not-allowed border border-zinc-800'
                 }`}
               >
-                <PackageCheckIcon className="w-4 h-4" />
-                Claim Order
+                <Trash2Icon className="w-4 h-4" />
+                Void Order
               </button>
             </div>
           </form>

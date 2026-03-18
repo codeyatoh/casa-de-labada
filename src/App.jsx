@@ -73,10 +73,10 @@ export function App() {
   return (
     <div
       className={`min-h-screen w-full bg-slate-950 transition-opacity duration-300 ${
-        isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+        isTransitioning ? 'opacity-0' : 'opacity-100'
       }`}
       style={{
-        transition: 'opacity 300ms ease, transform 300ms ease',
+        transition: 'opacity 300ms ease',
       }}
     >
       {/* PWA Install Banner */}

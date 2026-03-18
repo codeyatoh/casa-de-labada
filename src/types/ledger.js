@@ -94,9 +94,21 @@ export function calculateStatus(account, payment, collection = 0) {
 /**
  * Generate a dateString for Firestore-compatible date queries.
  * Format: "YYYY-MM-DD"
+ * Includes a business day cutoff rule: 7 AM.
+ * Anything before 7 AM is considered part of the previous day.
  */
 export function toDateString(date = new Date()) {
-  return date.toISOString().split('T')[0]
+  const localDate = new Date(date.getTime())
+  
+  if (localDate.getHours() < 7) {
+    localDate.setDate(localDate.getDate() - 1)
+  }
+  
+  const year = localDate.getFullYear()
+  const month = String(localDate.getMonth() + 1).padStart(2, '0')
+  const day = String(localDate.getDate()).padStart(2, '0')
+  
+  return `${year}-${month}-${day}`
 }
 
 /**

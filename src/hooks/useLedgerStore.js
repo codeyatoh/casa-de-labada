@@ -13,7 +13,6 @@ import {
 
 export function useLedgerStore() {
   const [entries, setEntries] = useState([])
-  const [existingOrNumbers, setExistingOrNumbers] = useState([])
   const [isLoading, setIsLoading] = useState(true)
 
   // Listen to all orders real-time and calculate current bounds
@@ -23,12 +22,12 @@ export function useLedgerStore() {
       const todayStr = toDateString()
       const dashboardEntries = data.filter(e => {
         if (e.status !== 'CLAIMED') return true
-        // Only show claims that happened today
-        return e.claimedAt && e.claimedAt.startsWith(todayStr)
+        // Only show claims that happened today (falling under the 7AM cutoff)
+        if (!e.claimedAt) return false
+        return toDateString(new Date(e.claimedAt)) === todayStr
       })
 
       setEntries(dashboardEntries)
-      setExistingOrNumbers(data.map((e) => e.orNumber))
       setIsLoading(false)
     })
     return () => unsubscribe()
@@ -36,26 +35,30 @@ export function useLedgerStore() {
 
   // --- Live Stats Calculation (Bento Grid) ---
   const stats = useMemo(() => {
-    // All entries available on the dashboard (Active + Today's Claimed)
-    const validEntries = entries.filter((e) => e.status !== 'VOID')
+    const todayStr = toDateString()
+    const allTimeEntries = entries.filter((e) => e.status !== 'VOID')
 
-    // Loads Done = total sum of machine cycles for today's visible tickets
-    const serviceVolume = validEntries.reduce(
-      (sum, e) => sum + e.cycles, 
-      0,
-    )
+    const todayLoads = allTimeEntries
+      .filter((e) => e.dateString === todayStr)
+      .reduce((sum, e) => sum + e.cycles, 0)
 
-    const totalRevenue = validEntries.reduce(
-      (sum, e) => sum + e.advancePayment + e.collection, 
-      0
-    )
+    const todayBilled = allTimeEntries
+      .filter((e) => e.dateString === todayStr)
+      .reduce((sum, e) => sum + e.accountAmount, 0)
 
-    const totalReceivables = validEntries.reduce(
-      (sum, e) => sum + (e.currentBalance > 0 ? e.currentBalance : 0),
-      0,
-    )
+    const todayCash = allTimeEntries.reduce((sum, e) => {
+      const advancePart = e.dateString === todayStr ? e.advancePayment : 0
+      const paymentDateStr = e.paidAt ? toDateString(new Date(e.paidAt)) : 
+                             (e.updatedAt ? toDateString(new Date(e.updatedAt)) : 
+                             (e.claimedAt ? toDateString(new Date(e.claimedAt)) : null))
+      const collectedPart = (e.collection > 0 && paymentDateStr === todayStr) ? e.collection : 0
+      return sum + advancePart + collectedPart
+    }, 0)
 
-    return { serviceVolume, totalRevenue, totalReceivables }
+    const allTimeCash = allTimeEntries.reduce((sum, e) => sum + e.advancePayment + e.collection, 0)
+    const allTimeUnpaid = allTimeEntries.reduce((sum, e) => sum + (e.currentBalance > 0 ? e.currentBalance : 0), 0)
+
+    return { todayLoads, todayBilled, todayCash, allTimeCash, allTimeUnpaid }
   }, [entries])
 
   // --- Add Entry ---
@@ -80,6 +83,7 @@ export function useLedgerStore() {
         status,
         createdAt: new Date().toISOString(),
         claimedAt: null,
+        paidAt: null, // explicit timestamp for when settlement/balance is paid
         dateString: toDateString(),
       }
       
@@ -96,7 +100,11 @@ export function useLedgerStore() {
   // --- Void Entry ---
   const voidEntry = useCallback(async (id) => {
     try {
-      await updateTransaction(id, { status: 'VOID' })
+      await updateTransaction(id, { 
+        status: 'VOID',
+        voidedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
     } catch (error) {
       console.error("Failed to void transaction", error)
       throw error
@@ -116,7 +124,9 @@ export function useLedgerStore() {
       await updateTransaction(id, {
         collection: newCollection,
         currentBalance: newBalance,
-        status: newStatus
+        status: newStatus,
+        paidAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       })
     } catch (error) {
       console.error("Failed to settle payment", error)
@@ -127,9 +137,11 @@ export function useLedgerStore() {
   // --- Mark as Claimed ---
   const markAsClaimed = useCallback(async (id) => {
     try {
+      const now = new Date().toISOString()
       await updateTransaction(id, { 
         status: 'CLAIMED', 
-        claimedAt: new Date().toISOString() 
+        claimedAt: now,
+        updatedAt: now
       })
     } catch (error) {
       console.error("Failed to claim transaction", error)
@@ -145,7 +157,6 @@ export function useLedgerStore() {
     voidEntry,
     settlePayment,
     markAsClaimed,
-    existingOrNumbers,
     checkOrNumberExists
   }
 }

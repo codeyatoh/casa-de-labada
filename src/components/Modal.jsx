@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react'
+import ReactDOM from 'react-dom'
 
 /**
  * Responsive, fixed-position modal with body lock and mobile-safe viewport sizing.
@@ -84,7 +85,7 @@ export function Modal({
 
   if (!isOpen) return null
 
-  return (
+  return ReactDOM.createPortal(
     <div
       className="
         modal-viewport
@@ -169,7 +170,8 @@ export function Modal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

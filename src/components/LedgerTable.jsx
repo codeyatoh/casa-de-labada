@@ -62,6 +62,7 @@ export function LedgerTable({
             <tr className="border-b border-zinc-700 bg-zinc-800">
               <th className="text-left py-3 px-4 text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium sticky top-0 bg-zinc-800 backdrop-blur-sm">OR#</th>
               <th className="text-left py-3 px-4 text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium sticky top-0 bg-zinc-800 backdrop-blur-sm">Name</th>
+              <th className="text-left py-3 px-4 text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium sticky top-0 bg-zinc-800 backdrop-blur-sm">{isClaimsSection ? 'Placed / Claimed' : 'Date & Time'}</th>
               <th className="text-right py-3 px-4 text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium sticky top-0 bg-zinc-800 backdrop-blur-sm">Weight</th>
               <th className="text-center py-3 px-4 text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium sticky top-0 bg-zinc-800 backdrop-blur-sm">Item</th>
               <th className="text-center py-3 px-4 text-[10px] uppercase tracking-[0.2em] text-zinc-500 font-medium sticky top-0 bg-zinc-800 backdrop-blur-sm">Cycles</th>
@@ -99,6 +100,32 @@ export function LedgerTable({
                   </td>
                   <td className={`py-3 px-4 font-semibold ${isVoid ? 'text-zinc-600' : 'text-white'}`}>
                     {entry.customerName}
+                  </td>
+                  <td className={`py-3 px-3 ${isVoid ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                    {isClaimsSection ? (
+                      <div className="space-y-0.5">
+                        <div className="text-[10px] text-zinc-500">
+                          <span className="text-zinc-600 uppercase tracking-wider">Placed: </span>
+                          {new Date(entry.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </div>
+                        {entry.claimedAt && (
+                          <div className="text-[10px] text-blue-400 font-medium">
+                            <span className="text-blue-500/60 uppercase tracking-wider">Claimed: </span>
+                            {new Date(entry.claimedAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}{' '}
+                            {new Date(entry.claimedAt).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-0.5">
+                        <div className="text-[10px] text-zinc-400 font-medium">
+                          {new Date(entry.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </div>
+                        <div className="text-[10px] text-zinc-500">
+                          {new Date(entry.createdAt).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                        </div>
+                      </div>
+                    )}
                   </td>
                   <td className={`py-3 px-4 text-right ${isVoid ? 'text-zinc-600' : 'text-zinc-300'}`}>
                     {entry.weight.toFixed(1)}kg
@@ -216,6 +243,24 @@ export function LedgerTable({
                   <p className={`text-white font-semibold text-sm ${isVoid ? 'line-through text-zinc-600' : ''}`}>
                     {entry.customerName}
                   </p>
+                  {isClaimsSection ? (
+                    <div className="mt-1 space-y-0.5">
+                      <p className="text-[10px] text-zinc-500">
+                        Placed: {new Date(entry.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                      {entry.claimedAt && (
+                        <p className="text-[10px] text-blue-400">
+                          Claimed: {new Date(entry.claimedAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}{' '}
+                          {new Date(entry.claimedAt).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-[10px] text-zinc-500">
+                      {new Date(entry.createdAt).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' })}{' '}
+                      {new Date(entry.createdAt).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right">
                   {isVoid ? (

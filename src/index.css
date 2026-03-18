@@ -93,13 +93,15 @@ html.modal-open body {
 
 @media (min-width: 640px) and (max-width: 1024px) {
   .modal-panel {
-    width: 70%;
+    width: 80%;
+    max-width: 600px;
   }
 }
 
 @media (min-width: 1024px) {
   .modal-panel {
     width: 100%;
+    max-width: 500px;
   }
 }
 

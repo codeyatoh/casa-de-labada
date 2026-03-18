@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react'
+import { toDateString } from '../types/ledger'
 import {
   RefreshCwIcon,
   PlusCircleIcon,
@@ -13,6 +14,8 @@ import {
   SearchIcon,
   ChevronDownIcon,
   BookOpenIcon,
+  CheckCircleIcon,
+  AlertCircleIcon,
 } from 'lucide-react'
 import { Logo } from '../components/Logo'
 import { BentoCard } from '../components/BentoCard'
@@ -22,6 +25,7 @@ import { SettlePaymentModal } from '../components/SettlePaymentModal'
 import { TransactionDetailsModal } from '../components/TransactionDetailsModal'
 import { ReportModal } from '../components/ReportModal'
 import { ClaimConfirmationModal } from '../components/ClaimConfirmationModal'
+import { VoidConfirmationModal } from '../components/VoidConfirmationModal'
 import { useLedgerStore } from '../hooks/useLedgerStore'
 import { exportToPDF } from '../components/ExportUtils'
 import { fetchAllForReport } from '../services/db'
@@ -43,6 +47,7 @@ export function Dashboard({ onLogout }) {
   const [settlePaymentEntry, setSettlePaymentEntry] = useState(null)
   const [viewDetailsEntry, setViewDetailsEntry] = useState(null)
   const [claimEntry, setClaimEntry] = useState(null)
+  const [voidEntryState, setVoidEntryState] = useState(null)
 
   const [currentTime, setCurrentTime] = useState(new Date())
 
@@ -85,8 +90,8 @@ export function Dashboard({ onLogout }) {
     )
   }, [activeOrders, searchQuery])
 
-  const handleGenerateReport = async (type) => {
-    // Fetch ALL records directly from Firestore — including VOID/cancelled
+  const handleGenerateReport = async (type, selectedDate) => {
+    // Fetch ALL records from Firestore — including VOID for full transparency
     let allRecords
     try {
       allRecords = await fetchAllForReport()
@@ -95,25 +100,58 @@ export function Dashboard({ onLogout }) {
       return
     }
 
-    let reportEntries = allRecords
-    if (type === 'daily') {
-      const todayStr = new Date().toISOString().split('T')[0]
-      reportEntries = reportEntries.filter((e) => e.dateString === todayStr)
-    } else if (type === 'weekly') {
-      const oneWeekAgo = new Date()
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
-      reportEntries = reportEntries.filter(
-        (e) => new Date(e.createdAt) >= oneWeekAgo,
-      )
+    // Helper: check if an ISO timestamp falls on the target business date
+    const isOnDate = (isoStr, targetDateStr) => {
+      if (!isoStr) return false
+      return toDateString(new Date(isoStr)) === targetDateStr
     }
-    reportEntries.sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    )
+
+    let reportEntries = allRecords
+    const targetDateStr = selectedDate || toDateString()
+
+    if (type === 'daily') {
+      // Include entries CREATED on that date, OR entries PAID (settled) on that date,
+      // OR entries CLAIMED on that date. Fallback to updatedAt or claimedAt for old records.
+      // This catches: yesterday's UNPAID customers who came back to pay/claim today
+      reportEntries = allRecords.filter((e) =>
+        e.dateString === targetDateStr ||               // created on selected date
+        isOnDate(e.paidAt || e.updatedAt || e.claimedAt, targetDateStr) || // payment settled on selected date
+        isOnDate(e.claimedAt, targetDateStr)            // claimed on selected date
+      )
+    } else if (type === 'weekly') {
+      const targetDate = new Date(targetDateStr)
+      const oneWeekAgo = new Date(targetDate)
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
+      const startDateStr = toDateString(oneWeekAgo)
+
+      // Include entries CREATED within the week, OR entries PAID within the week,
+      // OR entries CLAIMED within the week.
+      reportEntries = allRecords.filter((e) => {
+        const isCreatedInRange = e.dateString >= startDateStr && e.dateString <= targetDateStr
+        
+        const paymentDateStr = e.paidAt ? toDateString(new Date(e.paidAt)) : 
+                               (e.updatedAt ? toDateString(new Date(e.updatedAt)) : 
+                               (e.claimedAt ? toDateString(new Date(e.claimedAt)) : ''))
+        const isPaidInRange = e.collection > 0 && paymentDateStr >= startDateStr && paymentDateStr <= targetDateStr
+        
+        const claimDateStr = e.claimedAt ? toDateString(new Date(e.claimedAt)) : ''
+        const isClaimedInRange = e.status === 'CLAIMED' && claimDateStr >= startDateStr && claimDateStr <= targetDateStr
+        
+        return isCreatedInRange || isPaidInRange || isClaimedInRange
+      })
+    }
+
+    reportEntries.sort((a, b) => a.orNumber.localeCompare(b.orNumber, undefined, { numeric: true }))
+
     if (reportEntries.length === 0) {
-      toast.warning('No records found.')
+      toast.warning('No records found for the selected date.')
       return
     }
-    toast.promise(exportToPDF(reportEntries, type), {
+    const allTimeUnpaid = allRecords
+      .filter((e) => e.status !== 'VOID')
+      .reduce((sum, e) => sum + (e.currentBalance > 0 ? e.currentBalance : 0), 0)
+
+    toast.promise(exportToPDF(reportEntries, type, targetDateStr, allTimeUnpaid), {
       loading: 'Generating PDF...',
       success: 'PDF downloaded! 📥',
       error: 'PDF export failed.',
@@ -150,6 +188,11 @@ export function Dashboard({ onLogout }) {
 
   const handleVoid = (id) => {
     const entry = entries.find((e) => e.id === id)
+    setVoidEntryState(entry)
+  }
+
+  const confirmVoid = (id) => {
+    const entry = entries.find((e) => e.id === id)
     if (!entry) return
 
     toast.promise(voidEntry(id), {
@@ -157,6 +200,7 @@ export function Dashboard({ onLogout }) {
       success: `OR #${entry.orNumber} voided.`,
       error: 'Failed to void order.',
     })
+    setVoidEntryState(null)
   }
 
   return (
@@ -207,31 +251,52 @@ export function Dashboard({ onLogout }) {
         {/* Main Content */}
         <main className="max-w-[1440px] mx-auto px-4 sm:px-6 py-6 space-y-8">
           {/* Bento Stats Grid */}
-          <section aria-label="Daily statistics">
+          <section aria-label="Daily statistics" className="space-y-4">
+            {/* Row 1: Today's Metrics */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <BentoCard
-                title="Loads Done"
-                value={stats.serviceVolume}
-                icon={<RefreshCwIcon className="w-4 h-4" />}
-                accent="default"
-                subtitle="Wash & dry loads today"
+                title="Billed For Today"
+                value={`P${stats.todayBilled.toFixed(2)}`}
+                icon={<ActivityIcon className="w-4 h-4" />}
+                accent="seafoam"
+                subtitle="Gross billed today"
                 animationDelay="0ms"
               />
               <BentoCard
-                title="Cash Collected"
-                value={`P${stats.totalRevenue.toFixed(2)}`}
+                title="Cash For Today"
+                value={`P${stats.todayCash.toFixed(2)}`}
                 icon={<WalletIcon className="w-4 h-4" />}
                 accent="ocean"
                 subtitle="Total cash received today"
                 animationDelay="100ms"
               />
               <BentoCard
-                title="Unpaid Balance"
-                value={`P${stats.totalReceivables.toFixed(2)}`}
-                icon={<ClockIcon className="w-4 h-4" />}
-                accent="seafoam"
-                subtitle="Still owed by customers"
+                title="Loads From Today"
+                value={stats.todayLoads}
+                icon={<RefreshCwIcon className="w-4 h-4" />}
+                accent="default"
+                subtitle="Wash & dry loads today"
                 animationDelay="200ms"
+              />
+            </div>
+
+            {/* Row 2: All-Time Metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <BentoCard
+                title="Total Paid (All-Time)"
+                value={`P${stats.allTimeCash.toFixed(2)}`}
+                icon={<CheckCircleIcon className="w-4 h-4" />}
+                accent="ocean"
+                subtitle="All-time cash collected safely"
+                animationDelay="400ms"
+              />
+              <BentoCard
+                title="Total Unpaid (All-Time)"
+                value={`P${stats.allTimeUnpaid.toFixed(2)}`}
+                icon={<AlertCircleIcon className="w-4 h-4" />}
+                accent="seafoam"
+                subtitle="All-time system receivables"
+                animationDelay="500ms"
               />
             </div>
           </section>
@@ -245,7 +310,7 @@ export function Dashboard({ onLogout }) {
               <div className="flex items-center gap-2">
                 <BookOpenIcon className="w-4 h-4 text-zinc-500 group-hover:text-cyan-400 transition-colors" />
                 <span className="font-mono text-xs text-zinc-400 group-hover:text-zinc-200 transition-colors">
-                  How does the system work? &nbsp;<span className="text-zinc-600">— click to {showGuide ? 'hide' : 'show'} guide</span>
+                  How does the system work?&nbsp;<span className="text-zinc-600">— click to {showGuide ? 'hide' : 'show'}</span>
                 </span>
               </div>
               <ChevronDownIcon
@@ -254,67 +319,98 @@ export function Dashboard({ onLogout }) {
             </button>
 
             {showGuide && (
-              <div className="mt-2 rounded-xl border border-zinc-800 bg-zinc-900/80 p-5 space-y-6 animate-scale-in">
+              <div className="mt-2 rounded-xl border border-zinc-800 bg-zinc-900/80 divide-y divide-zinc-800 animate-scale-in overflow-hidden">
 
-                {/* Workflow */}
-                <div>
-                  <p className="font-mono text-xs uppercase tracking-widest text-zinc-500 mb-3 font-semibold">Workflow</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {/* Order Lifecycle */}
+                <div className="p-5">
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500 mb-3 font-semibold">Order Lifecycle</p>
+                  <div className="flex flex-wrap gap-2 items-center">
                     {[
-                      { step: '1', label: 'Add Customer', color: 'text-zinc-300 bg-zinc-800 border-zinc-700', desc: 'Enter name & weight. Price is auto-computed.' },
-                      { step: '2', label: 'Unpaid', color: 'text-red-400 bg-red-900/20 border-red-900/50', desc: 'Customer has not paid yet.' },
-                      { step: '3', label: 'Balance', color: 'text-amber-400 bg-amber-900/20 border-amber-900/50', desc: 'Customer paid partial amount.' },
-                      { step: '4', label: 'Paid', color: 'text-cyan-400 bg-cyan-900/20 border-cyan-900/50', desc: 'Fully paid. Ready for pickup.' },
-                      { step: '5', label: 'Claimed', color: 'text-blue-400 bg-blue-900/20 border-blue-900/50', desc: 'Order picked up and completed.' },
-                    ].map((item, i) => (
-                        <div key={i} className="flex flex-col border rounded-lg p-3 bg-zinc-800/20" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-                          <span className={`inline-block font-mono text-xs font-bold px-2 py-1 rounded border mb-2 w-fit ${item.color}`}>
-                            {item.step}. {item.label}
-                          </span>
-                          <p className="font-mono text-xs text-zinc-400 leading-relaxed">{item.desc}</p>
-                        </div>
+                      { label: 'New Entry', color: 'bg-zinc-800 text-zinc-300 border-zinc-700' },
+                      { label: '→', color: 'text-zinc-600', plain: true },
+                      { label: 'Unpaid', color: 'bg-red-900/20 text-red-400 border-red-900/40' },
+                      { label: '→', color: 'text-zinc-600', plain: true },
+                      { label: 'Balance', color: 'bg-amber-900/20 text-amber-400 border-amber-900/40' },
+                      { label: '→', color: 'text-zinc-600', plain: true },
+                      { label: 'Paid', color: 'bg-emerald-900/20 text-emerald-400 border-emerald-900/40' },
+                      { label: '→', color: 'text-zinc-600', plain: true },
+                      { label: 'Claimed', color: 'bg-blue-900/20 text-blue-400 border-blue-900/40' },
+                    ].map((item, i) =>
+                      item.plain ? (
+                        <span key={i} className={`font-mono text-xs ${item.color}`}>{item.label}</span>
+                      ) : (
+                        <span key={i} className={`font-mono text-xs font-semibold px-2.5 py-1 rounded-md border ${item.color}`}>{item.label}</span>
                       )
                     )}
                   </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+                    {[
+                      { status: 'Unpaid', desc: 'No payment yet. Order is active.' },
+                      { status: 'Balance', desc: 'Partial payment. Still has remaining balance.' },
+                      { status: 'Paid', desc: 'Fully paid. Ready for pick-up.' },
+                      { status: 'Claimed', desc: 'Picked up and completed.' },
+                    ].map((item) => (
+                      <div key={item.status} className="bg-zinc-800/30 border border-zinc-800 rounded-lg px-3 py-2">
+                        <p className="font-mono text-[10px] font-bold text-zinc-300">{item.status}</p>
+                        <p className="font-mono text-[10px] text-zinc-500 mt-0.5 leading-relaxed">{item.desc}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="border-t border-zinc-800" />
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-2 gap-6">
-                  {/* Actions Guide */}
+                {/* Actions + Cash Tracking in 2 columns */}
+                <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div>
-                    <p className="font-mono text-xs uppercase tracking-widest text-zinc-500 mb-3 font-semibold">Actions</p>
-                    <div className="space-y-2">
+                    <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500 mb-3 font-semibold">Actions</p>
+                    <div className="space-y-1.5">
                       {[
-                        { btn: 'Settle', color: 'text-cyan-400', desc: 'Record payment & update balance.' },
-                        { btn: 'Claim', color: 'text-blue-400', desc: 'Mark order as picked up.' },
-                        { btn: 'Void', color: 'text-red-400', desc: 'Cancel a wrong entry.' },
-                        { btn: 'View details', color: 'text-zinc-300', desc: 'See full payment breakdown.' },
+                        { btn: 'Settle', color: 'text-cyan-400', desc: 'Record payment and update balance.' },
+                        { btn: 'Claim', color: 'text-blue-400', desc: 'Mark order as picked up by customer.' },
+                        { btn: 'Void', color: 'text-red-400', desc: 'Cancel a wrong or duplicate entry.' },
+                        { btn: 'View Details', color: 'text-zinc-300', desc: 'See full payment breakdown.' },
                       ].map((item) => (
-                        <div key={item.btn} className="flex items-start gap-3 bg-zinc-800/40 rounded-lg px-3 py-2.5">
-                          <span className={`font-mono text-xs font-bold whitespace-nowrap ${item.color}`}>[{item.btn}]</span>
-                          <p className="font-mono text-xs text-zinc-400 mt-0.5">{item.desc}</p>
+                        <div key={item.btn} className="flex items-start gap-3 bg-zinc-800/30 rounded-lg px-3 py-2 border border-zinc-800">
+                          <span className={`font-mono text-[10px] font-bold whitespace-nowrap mt-0.5 ${item.color}`}>[{item.btn}]</span>
+                          <p className="font-mono text-[10px] text-zinc-400">{item.desc}</p>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  {/* Key Rules */}
                   <div>
-                    <p className="font-mono text-xs uppercase tracking-widest text-zinc-500 mb-3 font-semibold">Cheat Sheet</p>
-                    <ul className="space-y-3 mt-4">
+                    <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500 mb-3 font-semibold">Cash Tracking</p>
+                    <div className="space-y-1.5">
                       {[
-                        '📌 Unclaimed orders stay here daily.',
-                        '⚖️ 1 cycle = 1–7 kg. Auto-calculated.',
-                        '📄 Reports export all daily transactions.',
-                        '🔍 Search by customer name or OR#.',
-                      ].map((rule, i) => (
-                        <li key={i} className="flex gap-2 font-mono text-xs text-zinc-400">
-                          <span className="text-sm">{rule.split(' ')[0]}</span>
-                          <span className="mt-0.5">{rule.substring(rule.indexOf(' ') + 1)}</span>
-                        </li>
+                        { label: 'Advance Pay', desc: 'Customer pays partial on order day. Counted as cash received that day.' },
+                        { label: 'Same-Day Pay', desc: 'Full payment on placement day. Counted that same day.' },
+                        { label: 'Settle Later', desc: 'Customer pays balance on a different day. Counted on the payment day, not order day.' },
+                        { label: 'Claim Day', desc: 'Payment when order is picked up. Counted on the claim date.' },
+                      ].map((item) => (
+                        <div key={item.label} className="flex items-start gap-3 bg-zinc-800/30 rounded-lg px-3 py-2 border border-zinc-800">
+                          <span className="font-mono text-[10px] font-bold whitespace-nowrap mt-0.5 text-emerald-400">{item.label}</span>
+                          <p className="font-mono text-[10px] text-zinc-400">{item.desc}</p>
+                        </div>
                       ))}
-                    </ul>
+                    </div>
+                  </div>
+                </div>
+
+                {/* PDF Report Stats */}
+                <div className="p-5">
+                  <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-500 mb-3 font-semibold">PDF Report Stats</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { title: 'Total Billed', sub: 'For Today / This Week', desc: 'Gross total of orders placed in the selected date range.' },
+                      { title: 'Cash Received', sub: 'For Today / This Week', desc: 'Actual cash received ON that date — advance + settlements.' },
+                      { title: 'Loads', sub: 'For Today / This Week', desc: 'Number of wash/dry cycles from orders placed in range.' },
+                      { title: 'Total Unpaid', sub: 'All-Time', desc: 'System-wide outstanding balance across all days.' },
+                    ].map((item, i) => (
+                      <div key={i} className="bg-zinc-800/30 border border-zinc-800 rounded-lg px-3 py-2.5">
+                        <p className="font-mono text-[10px] font-bold text-cyan-400">{item.title}</p>
+                        <p className="font-mono text-[10px] text-zinc-600 mb-1">{item.sub}</p>
+                        <p className="font-mono text-[10px] text-zinc-500 leading-relaxed">{item.desc}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
@@ -446,6 +542,14 @@ export function Dashboard({ onLogout }) {
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         onGenerate={handleGenerateReport}
+      />
+
+      <VoidConfirmationModal
+        key={voidEntryState ? `void-${voidEntryState.id}` : 'void-empty'}
+        isOpen={!!voidEntryState}
+        onClose={() => setVoidEntryState(null)}
+        entry={voidEntryState}
+        onConfirm={() => confirmVoid(voidEntryState.id)}
       />
     </div>
   )

@@ -1,4 +1,5 @@
 import React from 'react'
+import ReactDOM from 'react-dom'
 import { XIcon, EyeIcon } from 'lucide-react'
 import { SERVICE_LABELS } from '../types/ledger'
 
@@ -9,8 +10,8 @@ export function TransactionDetailsModal({
 }) {
   if (!isOpen || !entry) return null
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+  return ReactDOM.createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
         onClick={onClose}
@@ -68,16 +69,44 @@ export function TransactionDetailsModal({
             </div>
             <div>
               <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 mb-1">
-                Date
+                Order Placed
               </p>
               <p className="font-mono text-sm text-zinc-200 font-medium">
                 {new Date(entry.createdAt).toLocaleDateString('en-PH', {
                   month: 'short',
                   day: 'numeric',
                   year: 'numeric',
-                })}
+                })}{' '}
+                <span className="text-zinc-500 text-xs">
+                  {new Date(entry.createdAt).toLocaleTimeString('en-PH', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true,
+                  })}
+                </span>
               </p>
             </div>
+            {entry.claimedAt && (
+              <div>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 mb-1">
+                  Claimed At
+                </p>
+                <p className="font-mono text-sm text-blue-300 font-medium">
+                  {new Date(entry.claimedAt).toLocaleDateString('en-PH', {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}{' '}
+                  <span className="text-blue-400/70 text-xs">
+                    {new Date(entry.claimedAt).toLocaleTimeString('en-PH', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
+                    })}
+                  </span>
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="h-px w-full bg-zinc-800" />
@@ -155,6 +184,7 @@ export function TransactionDetailsModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
