@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { toast } from 'sonner'
 import {
   calculateBalance,
   calculateStatus,
@@ -24,6 +25,11 @@ export function useLedgerStore() {
 
   // Listen to all orders real-time and calculate current bounds
   useEffect(() => {
+    const handleError = (error) => {
+      console.error('Firestore listener error:', error)
+      toast.error('Connection error. Data may be out of date.')
+    }
+
     const unsubscribe = subscribeToOrders((data) => {
       const todayStr = toDateString()
       
@@ -68,7 +74,7 @@ export function useLedgerStore() {
 
       setEntries(dashboardEntries)
       setIsLoading(false)
-    })
+    }, handleError)
     return () => unsubscribe()
   }, [])
 

@@ -16,7 +16,7 @@ const COLLECTION_NAME = 'transactions'
  * Listen to all Orders.
  * Returns an unsubscribe function to detach the listener.
  */
-export function subscribeToOrders(callback) {
+export function subscribeToOrders(callback, onError) {
   const q = query(
     collection(db, COLLECTION_NAME),
     where('status', '!=', 'VOID')
@@ -30,7 +30,7 @@ export function subscribeToOrders(callback) {
     // Sort client-side by createdAt descending (newest first)
     data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     callback(data)
-  })
+  }, onError)
 }
 
 /**

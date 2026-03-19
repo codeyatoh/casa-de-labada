@@ -43,6 +43,8 @@ export function App() {
     const { outcome } = await installPrompt.userChoice
     if (outcome === 'accepted') {
       toast.success('App installed!')
+    } else {
+      toast.info('You can install the app anytime from your browser menu.')
     }
     setInstallPrompt(null)
     setShowInstallBanner(false)

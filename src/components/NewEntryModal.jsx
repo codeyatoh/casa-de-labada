@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react'
 import { PlusCircleIcon, AlertTriangleIcon, ChevronDownIcon, CheckIcon } from 'lucide-react'
+import { toast } from 'sonner'
 import { Modal } from './Modal'
 import {
   SERVICE_LABELS,
@@ -85,9 +86,11 @@ export function NewEntryModal({
         const exists = await checkOrNumberExists(orNumber.trim())
         if (exists) {
           newErrors.orNumber = 'This OR# already exists in the records'
+          toast.warning(`OR# ${orNumber.trim()} already exists in records.`)
         }
       } catch {
         newErrors.orNumber = 'Could not verify OR#. Please try again.'
+        toast.error('Network error. Could not verify OR#.')
       } finally {
         setIsSubmitting(false)
       }
