@@ -39,19 +39,23 @@ export function Modal({
 
     document.addEventListener('keydown', handleKeyDown)
 
-    // Focus management
-    const node = initialFocusRef?.current || dialogRef.current
-    if (node && typeof node.focus === 'function') {
-      node.focus()
-    }
-
     return () => {
       document.documentElement.classList.remove('modal-open')
       document.documentElement.style.overflow = previousHtmlOverflow
       document.body.style.overflow = previousBodyOverflow
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, onClose, initialFocusRef])
+  }, [isOpen, onClose])
+
+  // Focus management
+  useEffect(() => {
+    if (!isOpen) return
+    const node = initialFocusRef?.current || dialogRef.current
+    if (node && typeof node.focus === 'function') {
+      node.focus()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]) // Intentional: only run when modal opens, not on every initialFocusRef change
 
   // Keep focused inputs visible when virtual keyboard appears
   useEffect(() => {
